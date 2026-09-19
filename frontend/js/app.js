@@ -25,7 +25,7 @@ let reproduciendo = false;
 
 btnSimular.addEventListener(
     "click",
-    async () => {
+    () => {
 
         const alturaInicial =
             parseFloat(
@@ -109,73 +109,15 @@ btnSimular.addEventListener(
         }
 
 
-        const datos = {
-
-            altura_inicial:
-                alturaInicial,
-
-            velocidad_inicial:
-                velocidadInicial,
-
-            gravedad:
-                gravedad,
-
-            tiempo_total:
-                tiempoTotal
-
-        };
-
-
-        console.log(
-            "Enviando al backend:",
-            datos
-        );
-
-
         try {
 
-            // =========================================
-            // CONECTAR CON FLASK
-            // =========================================
-
-            const respuesta =
-                await fetch(
-                    "http://127.0.0.1:5000/api/movimiento-vertical",
-                    {
-
-                        method: "POST",
-
-                        headers: {
-
-                            "Content-Type":
-                                "application/json"
-
-                        },
-
-                        body:
-                            JSON.stringify(datos)
-
-                    }
-                );
-
-
-            if (!respuesta.ok) {
-
-                throw new Error(
-                    "El servidor respondió con un error."
-                );
-
-            }
-
-
             const resultado =
-                await respuesta.json();
-
-
-            console.log(
-                "Respuesta del backend:",
-                resultado
-            );
+                calcularSimulacion(
+                    alturaInicial,
+                    velocidadInicial,
+                    gravedad,
+                    tiempoTotal
+                );
 
 
             // =========================================
@@ -238,7 +180,7 @@ btnSimular.addEventListener(
                     </h3>
 
                     <p>
-                        No se pudo conectar con el backend.
+                        Ocurrió un error al calcular la simulación.
                     </p>
 
                 </div>
@@ -249,6 +191,176 @@ btnSimular.addEventListener(
 
     }
 );
+
+
+// =====================================================
+// CALCULAR SIMULACIÓN (FÍSICA EN EL CLIENTE)
+// =====================================================
+
+function calcularSimulacion(
+    alturaInicial,
+    velocidadInicial,
+    gravedad,
+    tiempoTotal
+) {
+
+    const cantidadPuntos = 200;
+
+
+    // =================================================
+    // TIEMPO DE IMPACTO
+    //
+    // y = y0 + v0*t - 1/2*g*t²
+    //
+    // Resolviendo y = 0 con la fórmula cuadrática:
+    //
+    // t = (v0 + sqrt(v0² + 2*g*h)) / g
+    // =================================================
+
+    const discriminante =
+        velocidadInicial ** 2 +
+        2 * gravedad * alturaInicial;
+
+    const tiempoImpacto =
+        (velocidadInicial + Math.sqrt(discriminante)) /
+        gravedad;
+
+
+    // =================================================
+    // ALTURA MÁXIMA
+    // =================================================
+
+    let tiempoAlturaMaxima;
+    let alturaMaxima;
+
+    if (velocidadInicial > 0) {
+
+        tiempoAlturaMaxima =
+            velocidadInicial / gravedad;
+
+        alturaMaxima =
+            alturaInicial +
+            velocidadInicial * tiempoAlturaMaxima -
+            0.5 * gravedad * tiempoAlturaMaxima ** 2;
+
+    }
+    else {
+
+        tiempoAlturaMaxima = 0;
+
+        alturaMaxima = alturaInicial;
+
+    }
+
+
+    // =================================================
+    // VELOCIDAD DE IMPACTO
+    // =================================================
+
+    const velocidadImpacto =
+        velocidadInicial - gravedad * tiempoImpacto;
+
+
+    // =================================================
+    // TIEMPO FINAL
+    //
+    // La simulación nunca debe continuar después
+    // de que el objeto llegue al suelo.
+    // =================================================
+
+    const tiempoFinal =
+        Math.min(
+            tiempoTotal,
+            tiempoImpacto
+        );
+
+
+    // =================================================
+    // GENERAR TIEMPOS
+    // =================================================
+
+    const tiempos = [];
+
+    const paso =
+        tiempoFinal / (cantidadPuntos - 1);
+
+    for (
+        let i = 0;
+        i < cantidadPuntos;
+        i++
+    ) {
+
+        tiempos.push(i * paso);
+
+    }
+
+
+    // =================================================
+    // ECUACIONES DE MOVIMIENTO
+    // =================================================
+
+    const posicion =
+        tiempos.map(
+            (t) => {
+
+                return (
+                    alturaInicial +
+                    velocidadInicial * t -
+                    0.5 * gravedad * t ** 2
+                );
+
+            }
+        );
+
+    const velocidad =
+        tiempos.map(
+            (t) => velocidadInicial - gravedad * t
+        );
+
+    const aceleracion =
+        tiempos.map(
+            () => -gravedad
+        );
+
+
+    // =================================================
+    // FORZAR ÚLTIMO PUNTO AL SUELO
+    // =================================================
+
+    if (tiempoFinal === tiempoImpacto) {
+
+        posicion[cantidadPuntos - 1] = 0;
+
+        velocidad[cantidadPuntos - 1] = velocidadImpacto;
+
+    }
+
+
+    // =================================================
+    // RESULTADO
+    // =================================================
+
+    return {
+
+        "tiempo": tiempos,
+
+        "posicion": posicion,
+
+        "velocidad": velocidad,
+
+        "aceleracion": aceleracion,
+
+        "tiempo_impacto": tiempoImpacto,
+
+        "velocidad_impacto": velocidadImpacto,
+
+        "altura_maxima": alturaMaxima,
+
+        "tiempo_altura_maxima": tiempoAlturaMaxima
+
+    };
+
+}
 
 
 // =====================================================
@@ -1762,15 +1874,11 @@ function actualizarObjeto(
 
 
     // =================================================
-    // ALTURA INICIAL
+    // ALTURA MÁXIMA
     // =================================================
 
-    const alturaInicial =
-        parseFloat(
-            document.getElementById(
-                "alturaInicial"
-            ).value
-        );
+    const alturaMaxima =
+        resultadoSimulacion.altura_maxima;
 
 
     // =================================================
@@ -1834,7 +1942,7 @@ function actualizarObjeto(
 
     let porcentaje =
         posicionVisual /
-        alturaInicial;
+        alturaMaxima;
 
 
     porcentaje =
